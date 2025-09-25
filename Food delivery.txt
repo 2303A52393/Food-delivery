@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Food Delivery App</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1> Food Delivery</h1>
+  <div id="menu"></div>
+  <script src="script.js"></script>
+</body>
+</html>
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  background: #f9f9f9;
+}
+h1 {
+  color: #ff6347;
+}
+.food-item {
+  border: 1px solid #ddd;
+  padding: 10px;
+  margin: 10px 0;
+  background: #fff;
+}
+fetch('http://localhost:3000/api/foods')
+  .then(res => res.json())
+  .then(data => {
+    const menu = document.getElementById('menu');
+    data.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'food-item';
+      div.innerHTML = <h3>${item.name}</h3><p>₹${item.price}</p>;
+      menu.appendChild(div);
+    });
+  });
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const FoodItem = require('./models/FoodItem');
+
+const app = express();
+app.use(cors());
+
+mongoose.connect('mongodb://localhost:27017/foodapp', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+
+app.get('/api/foods', async (req, res) => {
+  const foods = await FoodItem.find();
+  res.json(foods);
+});
+
+app.listen(3000, () => console.log('Server running on http://localhost:3000'));
+const mongoose = require('mongoose');
+
+const foodItemSchema = new mongoose.Schema({
+  name: String,
+  price: Number,
+});
+
+module.exports = mongoose.model('FoodItem', foodItemSchema);
+[
+  { "name": "Pizza", "price": 250 },
+  { "name": "Burger", "price": 150 },
+  { "name": "Biryani", "price": 200 }
+]
