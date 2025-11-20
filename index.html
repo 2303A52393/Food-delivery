@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Food Delivery App — Monolith → Microservices Redesign</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;line-height:1.5;margin:24px;color:#111}
+    header{display:flex;gap:16px;align-items:center}
+    h1{margin:0;font-size:1.6rem}
+    .meta{color:#666;font-size:0.9rem}
+    section{margin-top:20px;padding:18px;border-radius:10px;background:#fbfbfb;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    pre{background:#0b1220;color:#d6e9ff;padding:12px;border-radius:6px;overflow:auto}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .grid{display:grid;grid-template-columns:1fr 340px;gap:16px}
+    table{border-collapse:collapse;width:100%}
+    td,th{border:1px solid #e6e6e6;padding:8px;text-align:left}
+    .ok{color:green}
+    .warn{color:darkorange}
+    .danger{color:red}
+    .center{text-align:center}
+    .small{font-size:0.9rem;color:#555}
+    .svg-wrap{overflow:auto;padding:8px;background:white;border-radius:6px}
+    .runbox{background:#fffbe6;border:1px dashed #ffd96e;padding:10px;border-radius:8px;margin-top:10px}
+    .btn{display:inline-block;background:#2563eb;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Food Delivery App — Microservices Redesign & Implementation</h1>
+      <div class="meta">Includes: proposal, UML (Use Case & Deployment), 3 microservice implementations (Node/Express), Dockerfiles, docker-compose, and comparison</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>1. Problem & Goals</h2>
+    <p>
+      Current system: a monolith that handles <strong>orders, payments, delivery tracking, and restaurant management</strong> in one codebase.
+      Goals for redesign:
+    </p>
+    <ul>
+      <li>Decouple responsibilities so teams can develop & deploy independently</li>
+      <li>Make the system horizontally scalable for high traffic peaks</li>
+      <li>Improve fault isolation (one service failing doesn't take entire app down)</li>
+      <li>Make it easier to maintain, test, and adopt appropriate storage/tech per service</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. Proposed Microservice Boundaries</h2>
+    <ol>
+      <li><strong>Order Service</strong> — handles order lifecycle: create, update, query orders.</li>
+      <li><strong>Payment Service</strong> — processes payments (simulate/call gateway), exposes payment status.</li>
+      <li><strong>Restaurant Service</strong> — restaurant catalog, menu, availability.</li>
+      <li>(Optional) Delivery Service — assign couriers and track location. Can be added later as separate service.</li>
+    </ol>
+    <p class="small">Each service owns its data store (here: in-memory for simplicity). Communication: synchronous HTTP for now (REST) and optionally asynchronous events (Kafka/RabbitMQ) for decoupling between services in production.</p>
+  </section>
+
+  <section>
+    <h2>3. UML Use Case Diagram</h2>
+    <div class="svg-wrap">
+      <!-- Simple Use Case SVG -->
+      <svg width="900" height="320" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .actor{font:14px sans-serif}
+          .uc{fill:#f3f6ff;stroke:#2b6df6;stroke-width:1.2}
+          .label{font:13px sans-serif;fill:#111}
+          .box{fill:none;stroke:#ccc;stroke-dasharray:3 2}
+        </style>
+
+        <!-- Actors -->
+        <g transform="translate(20,30)">
+          <text class="actor">Student / Customer</text>
+          <g transform="translate(0,18)">
+            <circle cx="10" cy="8" r="8" fill="#fff" stroke="#111"/>
+            <text x="30" y="12" class="small">Place Order / Track</text>
+          </g>
+        </g>
+
+        <g transform="translate(220,18)">
+          <rect x="0" y="0" width="220" height="260" rx="10" fill="#fff"/>
+          <text x="12" y="24" class="label">Food Delivery System</text>
+
+          <!-- Use case ovals -->
+          <ellipse class="uc" cx="110" cy="70" rx="90" ry="26"/>
+          <text x="80" y="76" class="label">Browse Restaurants</text>
+
+          <ellipse class="uc" cx="110" cy="120" rx="90" ry="26"/>
+          <text x="95" y="126" class="label">Place Order</text>
+
+          <ellipse class="uc" cx="110" cy="170" rx="90" ry="26"/>
+          <text x="88" y="176" class="label">Make Payment</text>
+
+          <ellipse class="uc" cx="110" cy="220" rx="90" ry="26"/>
+          <text x="85" y="226" class="label">Track Delivery</text>
+        </g>
+
+        <g transform="translate(520,30)">
+          <text class="actor">Restaurant Owner</text>
+          <g transform="translate(0,18)">
+            <circle cx="10" cy="8" r="8" fill="#fff" stroke="#111"/>
+            <text x="30" y="12" class="small">Manage Menu / Orders</text>
+          </g>
+        </g>
+
+        <!-- Associations (simple lines) -->
+        <line x1="120" y1="120" x2="220" y2="120" stroke="#444" stroke-width="1.2" />
+        <line x1="500" y1="120" x2="440" y2="120" stroke="#444" stroke-width="1.2" />
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Deployment Diagram</h2>
+    <div class="svg-wrap">
+      <!-- Simple Deployment SVG: services, DBs, API Gateway -->
+      <svg width="900" height="360" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .node{fill:#fff;stroke:#1f2937;stroke-width:1;border-radius:6px}
+          .label{font:13px sans-serif;fill:#111}
+          .comp{fill:#f7feff;stroke:#22c1ff}
+          .small{font-size:12px;fill:#444}
+        </style>
+
+        <!-- Client -->
+        <rect x="20" y="20" width="160" height="70" rx="8" fill="#fff" stroke="#ccc"/>
+        <text x="42" y="45" class="label">Mobile / Web Client</text>
+        <text x="42" y="62" class="small">User (place order, track)</text>
+
+        <!-- API Gateway -->
+        <rect x="220" y="20" width="160" height="70" rx="8" fill="#fff" stroke="#2b6df6"/>
+        <text x="250" y="45" class="label">API Gateway / Load Balancer</text>
+        <text x="250" y="62" class="small">Routing & Auth</text>
+
+        <!-- Services -->
+        <rect x="30" y="120" width="240" height="200" rx="10" fill="#fff" stroke="#e5e7eb"/>
+        <text x="48" y="145" class="label">Orders Node Pool (k8s ReplicaSet)</text>
+        <text x="48" y="165" class="small">Order Service (port 3001)</text>
+
+        <rect x="300" y="120" width="240" height="200" rx="10" fill="#fff" stroke="#e5e7eb"/>
+        <text x="318" y="145" class="label">Payments Node Pool</text>
+        <text x="318" y="165" class="small">Payment Service (port 3002)</text>
+
+        <rect x="570" y="120" width="240" height="200" rx="10" fill="#fff" stroke="#e5e7eb"/>
+        <text x="588" y="145" class="label">Restaurants Node Pool</text>
+        <text x="588" y="165" class="small">Restaurant Service (port 3003)</text>
+
+        <!-- Datastores -->
+        <rect x="120" y="340" width="220" height="60" rx="8" fill="#fff" stroke="#10b981"/>
+        <text x="140" y="365" class="label">Order DB (Postgres / partitioned)</text>
+
+        <rect x="370" y="340" width="220" height="60" rx="8" fill="#fff" stroke="#f59e0b"/>
+        <text x="420" y="365" class="label">Payment DB / Ledger</text>
+
+        <rect x="620" y="340" width="220" height="60" rx="8" fill="#fff" stroke="#ef4444"/>
+        <text x="640" y="365" class="label">Restaurant DB / Cache (Redis)</text>
+
+        <!-- Connections (arrows) -->
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="6" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+          </marker>
+        </defs>
+
+        <line x1="180" y1="60" x2="220" y2="60" stroke="#444" marker-end="url(#arrow)"/>
+        <line x1="380" y1="60" x2="380" y2="120" stroke="#444" marker-end="url(#arrow)"/>
+        <line x1="340" y1="60" x2="340" y2="120" stroke="#444" marker-end="url(#arrow)"/>
+
+        <line x1="150" y1="220" x2="150" y2="340" stroke="#333" marker-end="url(#arrow)"/>
+        <line x1="420" y1="220" x2="420" y2="340" stroke="#333" marker-end="url(#arrow)"/>
+        <line x1="690" y1="220" x2="690" y2="340" stroke="#333" marker-end="url(#arrow)"/>
+      </svg>
+    </div>
+    <div class="small">Notes: In production, each Node Pool = k8s Deployment with multiple replicas, autoscaling rules, and independent DBs or schemas. Use message broker for async (e.g., order created → payment requested → payment confirmed event → order updates).</div>
+  </section>
+
+  <section>
+    <h2>5. Microservice Implementations (sample code)</h2>
+    <p class="small">These are small, runnable Node/Express services. They keep data in-memory to keep example short. Replace with real DB and add validations for production.</p>
+
+    <h3>Common: Start commands</h3>
+    <pre><code># To run each service locally:
+# 1. mkdir order-service && cd order-service
+# 2. place index.js and Dockerfile (shown below)
+# 3. npm init -y
+# 4. npm install express body-parser node-fetch
+# 5. node index.js
+</code></pre>
+
+    <h3>Order Service — <code>order-service/index.js</code> (port 3001)</h3>
+    <pre><code>// index.js
+const express = require('express');
+const bodyParser = require('body-parser');
+const fetch = require('node-fetch'); // to call payment service
+
+const app = express();
+app.use(bodyParser.json());
+
+let orders = {};      // simple in-memory store
+let nextId = 1;
+
+// Create order (client posts items, restaurantId, total)
+app.post('/orders', async (req, res) => {
+  const {restaurantId, items, total} = req.body;
+  if (!restaurantId || !items || !total) return res.status(400).json({error:'missing fields'});
+  const id = String(nextId++);
+  const order = { id, restaurantId, items, total, status:'PENDING_PAYMENT', createdAt:new Date().toISOString() };
+  orders[id] = order;
+
+  // Call Payment Service (synchronous example)
+  try {
+    const payResp = await fetch('http://localhost:3002/payments', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({orderId:id, amount: total, method: 'CARD'})
+    });
+    const payRes = await payResp.json();
+    if (payResp.ok && payRes.status === 'CONFIRMED') {
+      order.status = 'PAID';
+    } else {
+      order.status = 'PAYMENT_FAILED';
+    }
+  } catch (err) {
+    order.status = 'PAYMENT_ERROR';
+  }
+
+  res.status(201).json(order);
+});
+
+// Get order
+app.get('/orders/:id', (req,res) => {
+  const o = orders[req.params.id];
+  if (!o) return res.status(404).json({error:'not found'});
+  res.json(o);
+});
+
+// List orders
+app.get('/orders', (req,res) => res.json(Object.values(orders)));
+
+const PORT = 3001;
+app.listen(PORT, ()=>console.log(`Order service listening on ${PORT}`));
+</code></pre>
+
+    <h3>Payment Service — <code>payment-service/index.js</code> (port 3002)</h3>
+    <pre><code>// index.js
+const express = require('express');
+const bodyParser = require('body-parser');
+const app = express();
+app.use(bodyParser.json());
+
+let payments = {};
+let next = 1;
+
+// Very simple mock payment processor
+app.post('/payments', (req,res) => {
+  const {orderId, amount, method} = req.body;
+  if (!orderId || !amount) return res.status(400).json({error:'missing fields'});
+  const id = String(next++);
+  // simulate random success / failure (for demo)
+  const success = (Math.random() > 0.15);
+  const status = success ? 'CONFIRMED' : 'FAILED';
+  payments[id] = {id, orderId, amount, method, status, processedAt: new Date().toISOString()};
+  const code = success ? 200 : 402;
+  res.status(code).json(payments[id]);
+});
+
+app.get('/payments/:id', (req,res) => {
+  const p = payments[req.params.id];
+  if (!p) return res.status(404).json({error:'not found'});
+  res.json(p);
+});
+
+const PORT = 3002;
+app.listen(PORT, ()=>console.log(`Payment service listening on ${PORT}`));
+</code></pre>
+
+    <h3>Restaurant Service — <code>restaurant-service/index.js</code> (port 3003)</h3>
+    <pre><code>// index.js
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+let restaurants = {
+  'r1': { id:'r1', name:'Pasta Place', menu:[ {id:'m1',name:'Spaghetti',price:8}, {id:'m2',name:'Garlic Bread',price:3}] },
+  'r2': { id:'r2', name:'Sushi Spot', menu:[ {id:'m1',name:'Salmon Roll',price:10}] }
+};
+
+app.get('/restaurants', (req,res)=>res.json(Object.values(restaurants)));
+app.get('/restaurants/:id', (req,res)=>{
+  const r = restaurants[req.params.id];
+  if(!r) return res.status(404).json({error:'not found'});
+  res.json(r);
+});
+app.post('/restaurants/:id/menu', (req,res)=>{
+  const r = restaurants[req.params.id];
+  if(!r) return res.status(404).json({error:'not found'});
+  const item = req.body;
+  if(!item.id) item.id = 'm' + (r.menu.length+1);
+  r.menu.push(item);
+  res.status(201).json(item);
+});
+
+const PORT = 3003;
+app.listen(PORT, ()=>console.log(`Restaurant service listening on ${PORT}`));
+</code></pre>
+
+    <h3>Dockerfile (for each service)</h3>
+    <pre><code># Dockerfile (same pattern for each service)
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+EXPOSE 3001
+CMD ["node","index.js"]
+</code></pre>
+
+    <h3>docker-compose.yml (to run locally)</h3>
+    <pre><code>version: '3.8'
+services:
+  order:
+    build: ./order-service
+    container_name: order-svc
+    ports: ["3001:3001"]
+    depends_on:
+      - payment
+      - restaurant
+  payment:
+    build: ./payment-service
+    container_name: payment-svc
+    ports: ["3002:3002"]
+  restaurant:
+    build: ./restaurant-service
+    container_name: restaurant-svc
+    ports: ["3003:3003"]
+# In production you'd add networks, volumes, and a DB service for each microservice.
+</code></pre>
+
+    <div class="runbox">
+      <strong>Quick run (local development):</strong>
+      <ol>
+        <li>Create three folders: <code>order-service</code>, <code>payment-service</code>, <code>restaurant-service</code>. Put the respective <code>index.js</code> in each.</li>
+        <li>In each folder: <code>npm init -y</code> and <code>npm i express body-parser node-fetch</code> (payment/restaurant may only need express).</li>
+        <li>Start each service: <code>node index.js</code> (or build the docker images and <code>docker-compose up --build</code>).</li>
+        <li>Test: <code>curl -X POST http://localhost:3001/orders -H 'Content-Type: application/json' -d '{"restaurantId":"r1","items":[{"id":"m1","qty":1}],"total":8}'</code></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <h2>6. API Contract (simple)</h2>
+    <pre><code>POST /orders   -> { restaurantId, items[], total }  => 201 { order }
+GET  /orders/:id -> 200 { order }
+POST /payments  -> { orderId, amount, method } => 200 { payment } (or 402)
+GET  /restaurants -> 200 [{ restaurant }]
+GET  /restaurants/:id -> 200 { restaurant }
+</code></pre>
+  </section>
+
+  <section>
+    <h2>7. Comparison: Monolith vs Microservices</h2>
+    <table>
+      <thead>
+        <tr><th>Aspect</th><th>Monolith</th><th>Microservices (proposed)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Performance (latency)</td>
+            <td>Lower inter-process overhead (all in-process calls) — good for simple loads.</td>
+            <td>Network calls between services add latency. Mitigate with smart co-location, API Gateway, caching, gRPC. At scale, more parallelism offsets overhead.</td></tr>
+        <tr><td>Scalability</td>
+            <td>Whole app must be scaled (replicate entire monolith) — inefficient if only order volume spikes.</td>
+            <td>Scale services independently (e.g., scale Payment service during checkout-heavy periods). Better resource utilization and cost-efficiency.</td></tr>
+        <tr><td>Maintainability</td>
+            <td>Single codebase can become large and hard to understand; deployments riskier.</td>
+            <td>Smaller codebases per service; teams can own services and release independently. Better for large orgs.</td></tr>
+        <tr><td>Fault isolation</td>
+            <td>Single failure can affect entire system.</td>
+            <td>Failure limited to one service if designed with timeouts/retries/circuit-breakers.</td></tr>
+        <tr><td>Deployment</td>
+            <td>Single artifact — simple but risky.</td>
+            <td>Many artifacts — need CI/CD pipelines per service; more complex but safer releases.</td></tr>
+        <tr><td>Operational complexity</td>
+            <td>Simpler to run initially.</td>
+            <td>Requires service discovery, logging, tracing, monitoring, distributed tracing, resilience patterns (retries/circuit breakers), and orchestration (k8s).</td></tr>
+      </tbody>
+    </table>
+
+    <h4>When to pick which?</h4>
+    <ul>
+      <li>Monolith — good for small teams, early MVP, fast iteration.</li>
+      <li>Microservices — when you need independent scaling, multiple teams, and fault isolation at scale.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>8. Production Considerations & Next Steps</h2>
+    <ul>
+      <li><strong>Persistence:</strong> Replace in-memory stores with dedicated databases (Postgres / MySQL / MongoDB) and give each service its own DB/schema.</li>
+      <li><strong>Asynchronous events:</strong> Use message broker (Kafka/RabbitMQ) for decoupling (e.g., order.created → payment service consumes).</li>
+      <li><strong>Resilience:</strong> Implement retries with exponential backoff, timeouts, circuit breakers (Hystrix / Resilience4j), idempotency tokens for payments.</li>
+      <li><strong>Observability:</strong> Centralized logging (ELK), metrics (Prometheus/Grafana), distributed tracing (Jaeger/Zipkin).</li>
+      <li><strong>Security:</strong> Authentication/authorization at API Gateway (JWT/OAuth2), TLS between services.</li>
+      <li><strong>CI/CD:</strong> Pipeline per service, automated tests, canary/blue-green deployments.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>9. Deliverables included in this HTML</h2>
+    <ul>
+      <li>Design rationale + UML diagrams (inline SVG)</li>
+      <li>Service sample code (Order, Payment, Restaurant)</li>
+      <li>Dockerfile and docker-compose example</li>
+      <li>Comparison and production notes</li>
+    </ul>
+    <div class="center">
+      <a class="btn" href="#top">Back to top</a>
+    </div>
+  </section>
+
+  <footer style="margin-top:20px;color:#666;font-size:0.9rem">
+    <div>Notes: This is a minimal, educational example. For production readiness, add security, persistence, monitoring, and more robust error handling.</div>
+    <div style="margin-top:8px">If you want, I can now:</div>
+    <ul>
+      <li>Generate complete folder structure and downloadable zip with code and docker-compose.</li>
+      <li>Replace HTTP sync with an event-driven pattern (example using RabbitMQ / Kafka).</li>
+      <li>Add API Gateway (NGINX config) or a tiny frontend that calls services.</li>
+    </ul>
+  </footer>
+</body>
+</html>
